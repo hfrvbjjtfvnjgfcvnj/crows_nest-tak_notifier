@@ -11,19 +11,21 @@ class NotifierFunctor:
   def __init__(self,config):
     self.connection=create_tak_connection(config);
     self.__loadxml();
-    self(config,"TakNotifier - Active","0",0,"control","");
-    self(config,"TakNotifier - Active","1",0,"control","");
-    self(config,"TakNotifier - Active","2",0,"control","");
+    self(config,"TakNotifier - Active","0",0,"","control","");
+    self(config,"TakNotifier - Active","1",0,"","control","");
+    self(config,"TakNotifier - Active","2",0,"","control","");
   
-  def __call__(self,config,title,msg_text,priority,sound,url):
+  def __call__(self,config,title,msg_text,priority,alert_type_name,sound,url):
     tak_notifier_alert_on=config.get("tak_notifier_alert_on",[]);
-    if ("control" == sound) or  ("*" in tak_notifier_alert_on) or (sound in tak_notifier_alert_on):
+    if ("control" == alert_type_name) or  ("*" in tak_notifier_alert_on) or (alert_type_name in tak_notifier_alert_on):
       content="%s||%s"%(title,msg_text);
       msg=self.__customize_template(config,content);
+      print("############################################")
       print(msg);
+      print("############################################")
       self.connection.send(msg.encode("utf-8"));
-    else:
-      print("__call__(%s) dropping..."%sound);
+    #else:
+    #  print("__call__(%s) dropping..."%alert_type_name);
     
   def __loadxml(self):
     self.template = Path('plugins/tak_notifier/template.xml').read_text();
