@@ -11,9 +11,13 @@ def load_configuration():
   f.close();
   return config
 
-nf=NotifierFunctor();
 config=load_configuration();
 #print(config)
+nf=NotifierFunctor(config);
+sleep(10);
 nf(config,"This is a title","This is some text",0,"spook","none");
-
+counter=0;
+while 1:
+    nf(config,"Loop Message","Message %d"%counter,0,"spook","none");
+    counter=counter+1
 

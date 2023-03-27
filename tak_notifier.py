@@ -5,32 +5,43 @@ from datetime import timezone
 from datetime import timedelta
 import uuid
 import re
+from tak_connection import create_tak_connection
 
 class NotifierFunctor:
-  def __init__(self):
+  def __init__(self,config):
+    self.connection=create_tak_connection(config);
     self.__loadxml();
+    self(config,"TakNotifier - Active","0",0,"control","");
+    self(config,"TakNotifier - Active","1",0,"control","");
+    self(config,"TakNotifier - Active","2",0,"control","");
   
   def __call__(self,config,title,msg_text,priority,sound,url):
     tak_notifier_alert_on=config.get("tak_notifier_alert_on",[]);
-    if ("*" in tak_notifier_alert_on) or (sound in tak_notifier_alert_on):
+    if ("control" == sound) or  ("*" in tak_notifier_alert_on) or (sound in tak_notifier_alert_on):
       content="%s||%s"%(title,msg_text);
       msg=self.__customize_template(config,content);
       print(msg);
+      self.connection.send(msg.encode("utf-8"));
+    else:
+      print("__call__(%s) dropping..."%sound);
     
   def __loadxml(self):
-    self.template = Path('template.xml').read_text();
+    self.template = Path('plugins/tak_notifier/template.xml').read_text();
 
   def __customize_template(self,config,content):
     custom = self.template;
+    custom=custom.replace("\n","");
+    custom=re.sub("\s\s+"," ",custom)
+    custom=custom.replace("> <","><")
     
     replacements = self.__build_replacments(config,content);
     keys=replacements.keys();
     for key in keys:
       rep=replacements[key];
       custom=custom.replace(key,rep);
-    custom=custom.replace("\n","");
-    custom=re.sub("\s\s+"," ",custom)
-    custom=custom.replace("> <","><")
+    #custom=custom.replace("\n","");
+    #custom=re.sub("\s\s+"," ",custom)
+    #custom=custom.replace("> <","><")
     return custom
   
   def __build_replacments(self,config,content):
