@@ -5,12 +5,14 @@ from datetime import timezone
 from datetime import timedelta
 import uuid
 import re
+import time
 from tak_connection import create_tak_connection
 
 class NotifierFunctor:
   def __init__(self,config):
     self.connection=create_tak_connection(config);
     self.__loadxml();
+    time.sleep(2);
     self(config,"TakNotifier - Active","0",0,"","control","");
     self(config,"TakNotifier - Active","1",0,"","control","");
     self(config,"TakNotifier - Active","2",0,"","control","");
