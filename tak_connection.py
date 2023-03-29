@@ -6,6 +6,7 @@ import time
 
 instance=None;
 thread=None;
+lock=threading.Lock();
 
 async def a_conn_thread():
     #print("setting up instance...");
@@ -17,11 +18,14 @@ def conn_thread():
 def create_tak_connection(config):
     global instance
     global thread
+    lock.acquire();
     if instance is None:
+        print("create_tak_connection() - creating a new connection");
         instance = TakConnection(config);
-    thread=threading.Thread(target=conn_thread);
-    thread.start();
+        thread=threading.Thread(target=conn_thread);
+        thread.start();
     time.sleep(1);
+    lock.release();
     return instance;
 
 class TakSerializer(pytak.QueueWorker):
