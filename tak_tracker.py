@@ -17,7 +17,7 @@ class Tracker:
         self.last_track_time=time.time();
         self.track_interval_sec=config.get("tak_tracker_update_interval_seconds",15);
         self.uuid_hex_map={};
-        print("tak_tracker - Tracker() - Initialized");
+        print("tak_tracker - Tracker() initialized");
 
     def track_alert_aircraft(self,list_of_aircraft,field_map):
         t=time.time();
@@ -64,13 +64,26 @@ class Tracker:
         replacements["[TRACK]"] = str(aircraft[field_map['track']]);
         replacements["[SPEED]"] = str(aircraft[field_map['speed']]);
         replacements["[TYPE]"] = self.__aircraft_type_milstd(aircraft,field_map);
-        return replacements
-    
+        return replacements;
+
+    def __faa_to_icao_type(self,aircraft,field_map):
+        faa_type_name=aircraft[field_map['faa_type_name']];
+        if (faa_type_name is None):
+            return None;
+        if ('rotorcraft' in faa_type_name):
+            return 'H2T';
+        #assume a single-engine turboprop as a catch-all
+        return 'L1T';
+
     def __aircraft_type_milstd(self,aircraft,field_map):
         attitude='u';
         affiliation='M';
         type='F';
         icao_description=aircraft[field_map['description']];
+
+        #try to make FAA type to an ICAO description
+        if (icao_description is None) or (len(icao_description) < 3):
+            icao_description = self.__faa_to_icao_type(aircraft,field_map);
 
         #map ICAO helo and tilt-rotor to CoT helo type
         if (icao_description[0] == 'H') or (icao_description[0] == 'T'):
