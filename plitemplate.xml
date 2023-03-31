@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<event version="2.0" uid="[UUID]" type="[TYPE]" how="m-g" time="[TIME]" start="[TIME]" stale="[STALE]">
+	<point lat="[LAT]" lon="[LON]" hae="0.0" ce="9999999.0" le="9999999.0"/>
+	<detail>
+		<contact callsign="[CALLSIGN]" />
+		<track speed="[SPEED]" course="[TRACK]"/>
+	</detail>
+</event>

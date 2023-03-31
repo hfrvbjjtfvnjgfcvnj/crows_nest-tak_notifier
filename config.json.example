@@ -1,0 +1,15 @@
+{
+  "station_latitude":12.345678,
+  "station_longitude":-87.654321,
+  "tak_notifier_alert_on":["loiter","spook","government","military"],
+  "tak_notifier_callsign":"CROWS_NEST",
+
+  "tak_tracker":{
+          "attitude_map":{
+                  "loiter":"s",
+                  "government":"n",
+                  "military":"f",
+                  "spook":"s"
+          }
+  }
+}
