@@ -17,6 +17,10 @@ class Tracker:
         self.last_track_time=time.time();
         self.track_interval_sec=config.get("tak_tracker_update_interval_seconds",15);
         self.uuid_hex_map={};
+        self.attitude_map=config.get("tak_tracker",{});
+        self.attitude_map=self.attitude_map.get("attitude_map",{});
+        print("tak_tracker - attitude_map");
+        print(self.attitude_map)
         print("tak_tracker - Tracker() initialized");
 
     def track_alert_aircraft(self,list_of_aircraft,field_map):
@@ -45,7 +49,21 @@ class Tracker:
         #custom=re.sub("\s\s+"," ",custom)
         #custom=custom.replace("> <","><")
         return custom
-    
+   
+    def __build_callsign(self,aircraft,field_map):
+        callsign=aircraft[field_map['icao_name']];
+        operator=aircraft[field_map['registrant_name']];
+
+        if (operator is not None) and (operator != "None"):
+            callsign=operator+"\n"+callsign;
+
+        if callsign is None or "" == callsign:
+            callsign=aircraft[field_map['registration']];
+            if callsign is None or "" == callsign:
+                callsign=aircraft[field_map['hex']];
+        return callsign
+
+
     def __build_replacments(self,aircraft,field_map):
         replacements={}
         t0=datetime.utcnow().replace(tzinfo=timezone.utc)
@@ -57,9 +75,7 @@ class Tracker:
         self.uuid_hex_map[aircraft[field_map['hex']]] = replacements["[UUID]"];
         replacements["[LAT]"] = str(aircraft[field_map['latitude']]);
         replacements["[LON]"] = str(aircraft[field_map['longitude']]);
-        callsign=aircraft[field_map['registration']];
-        if callsign is None or "" == callsign:
-            callsign=aircraft[field_map['hex']];
+        callsign=self.__build_callsign(aircraft,field_map);
         replacements["[CALLSIGN]"] = callsign;
         replacements["[TRACK]"] = str(aircraft[field_map['track']]);
         replacements["[SPEED]"] = str(aircraft[field_map['speed']]);
@@ -68,17 +84,18 @@ class Tracker:
 
     def __faa_to_icao_type(self,aircraft,field_map):
         faa_type_name=aircraft[field_map['faa_type_name']];
-        if (faa_type_name is None):
-            return None;
-        if ('rotorcraft' in faa_type_name):
+        if (faa_type_name is not None) and ('rotorcraft' in faa_type_name):
             return 'H2T';
         #assume a single-engine turboprop as a catch-all
         return 'L1T';
 
     def __aircraft_type_milstd(self,aircraft,field_map):
-        attitude='u';
+        attitude=self.attitude_map.get(aircraft[field_map['alert_type_name']],'s');
         affiliation='M';
         type='F';
+
+         
+
         icao_description=aircraft[field_map['description']];
 
         #try to make FAA type to an ICAO description
