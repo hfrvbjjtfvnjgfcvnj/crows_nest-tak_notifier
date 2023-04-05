@@ -19,6 +19,7 @@ class Tracker:
         self.sent_metadata=False;
         self.uuid_hex_map={};
         tak_tracker_config=config.get("tak_tracker",{});
+        self.tak_tracker_config=tak_tracker_config;
         self.track_interval_sec=tak_tracker_config.get("update_interval_seconds",15);
         self.metadata_interval_sec=tak_tracker_config.get("metadata_update_interval_seconds",300);
         self.attitude_map=tak_tracker_config.get("attitude_map",{});
@@ -42,6 +43,9 @@ class Tracker:
         if (self.sent_metadata == False) or (t-self.last_metadata_time >= self.metadata_interval_sec): #resend at configured interval
             #send loiter exclusion zones
             for exclusion_zone in self.loiter_exclusions:
+                if not exclusion_zone.get("enabled",False):
+                    continue;
+                print("Exclusion Zone: %s"%(exclusion_zone["name"],));
                 custom=self.__customize_range_rings_template(exclusion_zone);
                 self.connection.send(custom.encode('utf-8'));
             self.last_metadata_time=t;
@@ -54,6 +58,7 @@ class Tracker:
     def __customize_pli_template(self,aircraft,field_map):
         custom = self.pli_template;
         custom=custom.replace("\n","");
+        custom=custom.replace("\t","");
         custom=re.sub("\s\s+"," ",custom)
         custom=custom.replace("> <","><")
         
@@ -66,6 +71,10 @@ class Tracker:
    
     def __customize_range_rings_template(self,exclusion_zone):
         custom = self.range_rings_template;
+        custom=custom.replace("\n","");
+        custom=custom.replace("\t","");
+        custom=re.sub("\s\s+"," ",custom)
+        custom=custom.replace("> <","><")
         
         replacements = self.__build_range_rings_replacments(exclusion_zone);
         keys=replacements.keys();
@@ -134,8 +143,22 @@ class Tracker:
         replacements["[LON]"] = str(elon);
         replacements["[RADIUS_METERS]"] = str(radius);
         replacements["[NAME]"] = ename;
+        replacements["[COLOR]"] = self.__hex_str_to_color(self.tak_tracker_config.get('exclusion_range_rings_color','FFFF0000'));
+        replacements["[FILL_COLOR]"] = self.__hex_str_to_color(self.tak_tracker_config.get('exclusion_range_rings_fill_color','00FF0000'));
+        replacements["[STROKE_WEIGHT]"] = str(self.tak_tracker_config.get('exclusion_range_stroke_weight',3));
 
         return replacements;
+
+    def __hex_str_to_color(self,hex_str):
+        v=int(hex_str,16);
+        #print("v:%d"%(v,));
+        s=v-(1<<32);
+        #print("s:%d"%(s,));
+        #print("%s - > %s"%(hex_str,str(s)));
+        return str(s);
+
+
+        return str(u);
 
     def __faa_to_icao_type(self,aircraft,field_map):
         faa_type_name=aircraft[field_map['faa_type_name']];

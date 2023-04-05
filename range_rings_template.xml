@@ -9,7 +9,7 @@
 			<link relation="p-c" uid="[UUID].Style" type="b-x-KmlStyle">
 				<Style>
 					<LineStyle>
-						<color>ffff0000</color>
+						<color>ff00ff00</color>
 						<width>3</width>
 						<alpha>0</alpha>
 					</LineStyle>
@@ -19,10 +19,10 @@
 				</Style>
 			</link>
 		</shape>
-		<color argb="-65536"/>
-		<strokeColor value="-65536"/>
-		<strokeWeight value="3"/>
-		<fillColor value="16776960"/>
+		<color argb="[COLOR]"/>
+		<strokeColor value="[COLOR]"/>
+		<strokeWeight value="[STROKE_WEIGHT]"/>
+		<fillColor value="[FILL_COLOR]"/>
 		<archive/>
 		<remarks/>
 	</detail>
