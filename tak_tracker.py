@@ -19,6 +19,7 @@ class Tracker:
         self.sent_metadata=False;
         self.uuid_hex_map={};
         tak_tracker_config=config.get("tak_tracker",{});
+        self.config=config;
         self.tak_tracker_config=tak_tracker_config;
         self.track_interval_sec=tak_tracker_config.get("update_interval_seconds",15);
         self.metadata_interval_sec=tak_tracker_config.get("metadata_update_interval_seconds",300);
@@ -41,12 +42,17 @@ class Tracker:
 
     def __try_send_metadata(self,t):
         if (self.sent_metadata == False) or (t-self.last_metadata_time >= self.metadata_interval_sec): #resend at configured interval
+            #send station range rings
+            custom = self.__customize_range_rings_template();
+            if (custom != ""):
+                self.connection.send(custom.encode('utf-8'));
+
             #send loiter exclusion zones
             for exclusion_zone in self.loiter_exclusions:
                 if not exclusion_zone.get("enabled",False):
                     continue;
                 print("Exclusion Zone: %s"%(exclusion_zone["name"],));
-                custom=self.__customize_range_rings_template(exclusion_zone);
+                custom=self.__customize_exclusion_zone_template(exclusion_zone);
                 self.connection.send(custom.encode('utf-8'));
             self.last_metadata_time=t;
             self.sent_metadata=True;
@@ -54,6 +60,7 @@ class Tracker:
     def __loadxml(self):
         self.pli_template = Path('plugins/tak_notifier/plitemplate.xml').read_text();
         self.range_rings_template = Path('plugins/tak_notifier/range_rings_template.xml').read_text();
+        self.ellipse_template = Path('plugins/tak_notifier/ellipse_template.xml').read_text().replace("\n","");
     
     def __customize_pli_template(self,aircraft,field_map):
         custom = self.pli_template;
@@ -69,14 +76,51 @@ class Tracker:
             custom=custom.replace(key,rep);
         return custom
    
-    def __customize_range_rings_template(self,exclusion_zone):
+    def __customize_range_rings_template(self):
         custom = self.range_rings_template;
         custom=custom.replace("\n","");
         custom=custom.replace("\t","");
         custom=re.sub("\s\s+"," ",custom)
         custom=custom.replace("> <","><")
         
-        replacements = self.__build_range_rings_replacments(exclusion_zone);
+        range_zone={}
+        range_zone["name"] = "Station";
+        range_zone["latitude"]=str(self.config["station_latitude"]);
+        range_zone["longitude"]=str(self.config["station_longitude"]);
+        range_zone["radius_meters"]=str(self.tak_tracker_config["range_rings_distance_meters"]);
+
+        replacements = self.__build_range_rings_replacements(range_zone,self.tak_tracker_config["feature_colors"]["station_range_rings"]);
+        
+        #here we inject a special rule to replace the single ellipse in the template with N ellipses
+        rings="";
+        for i in range(self.tak_tracker_config.get("range_rings_count",0)):
+            rings=rings+self.ellipse_template;
+            radius=int(range_zone["radius_meters"])*(i+1);
+            rings=rings.replace("[RADIUS_METERS]",str(radius));
+
+        if rings=="":
+            return "";
+        
+        print("mapping %s -> %s"%(self.ellipse_template,rings));
+        #replacements[self.ellipse_template]=rings;
+        #print("BEFORE: %s"%custom);
+        custom=custom.replace(self.ellipse_template,rings);
+        keys=replacements.keys();
+        for key in keys:
+            rep=replacements[key];
+            custom=custom.replace(key,rep);
+        print(custom);
+        return custom
+
+        
+    def __customize_exclusion_zone_template(self,exclusion_zone):
+        custom = self.range_rings_template;
+        custom=custom.replace("\n","");
+        custom=custom.replace("\t","");
+        custom=re.sub("\s\s+"," ",custom)
+        custom=custom.replace("> <","><")
+        
+        replacements = self.__build_range_rings_replacements(exclusion_zone,self.tak_tracker_config["feature_colors"]["exclusion_zone_range_rings"]);
         keys=replacements.keys();
         for key in keys:
             rep=replacements[key];
@@ -122,18 +166,17 @@ class Tracker:
         replacements["[TYPE]"] = self.__aircraft_type_milstd(aircraft,field_map);
         return replacements;
 
-    def __build_range_rings_replacments(self,exclusion_zone):
+    def __build_range_rings_replacements(self,ring_zone,color_map):
         replacements={};
         t0=datetime.utcnow().replace(tzinfo=timezone.utc)
         duration=timedelta(minutes=1);
         stale=t0+duration;
-        #if exclusion["enabled"] == False:
-        #    continue;
-        ename=exclusion_zone["name"];
-        ekey="exclusion_zone: %s"%(ename,);
-        elat=exclusion_zone["latitude"];
-        elon=exclusion_zone["longitude"];
-        radius=exclusion_zone["radius_meters"];
+        
+        ename=ring_zone["name"];
+        ekey="ring_zone: %s"%(ename,);
+        elat=ring_zone["latitude"];
+        elon=ring_zone["longitude"];
+        radius=ring_zone["radius_meters"];
 
         replacements["[TIME]"] = t0.isoformat();
         replacements["[STALE]"] = stale.isoformat();
@@ -143,9 +186,12 @@ class Tracker:
         replacements["[LON]"] = str(elon);
         replacements["[RADIUS_METERS]"] = str(radius);
         replacements["[NAME]"] = ename;
-        replacements["[COLOR]"] = self.__hex_str_to_color(self.tak_tracker_config.get('exclusion_range_rings_color','FFFF0000'));
-        replacements["[FILL_COLOR]"] = self.__hex_str_to_color(self.tak_tracker_config.get('exclusion_range_rings_fill_color','00FF0000'));
-        replacements["[STROKE_WEIGHT]"] = str(self.tak_tracker_config.get('exclusion_range_stroke_weight',3));
+        #replacements["[COLOR]"] = self.__hex_str_to_color(self.tak_tracker_config.get('exclusion_range_rings_color','FFFF0000'));
+        #replacements["[FILL_COLOR]"] = self.__hex_str_to_color(self.tak_tracker_config.get('exclusion_range_rings_fill_color','00FF0000'));
+        #replacements["[STROKE_WEIGHT]"] = str(self.tak_tracker_config.get('exclusion_range_stroke_weight',3));
+        replacements["[COLOR]"] = self.__hex_str_to_color(color_map['color']);
+        replacements["[FILL_COLOR]"] = self.__hex_str_to_color(color_map['fill_color']);
+        replacements["[STROKE_WEIGHT]"] = str(color_map['stroke_weight']);
 
         return replacements;
 
@@ -159,6 +205,9 @@ class Tracker:
 
 
         return str(u);
+
+    def __build_range_rings_elipse(self,radius_meters):
+        t='<ellipse minor="17058.58" angle="360" major="17058.58"/>'
 
     def __faa_to_icao_type(self,aircraft,field_map):
         faa_type_name=aircraft[field_map['faa_type_name']];
