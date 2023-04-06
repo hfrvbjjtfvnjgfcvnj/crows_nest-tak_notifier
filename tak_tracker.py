@@ -8,6 +8,54 @@ import re
 import time
 from tak_connection import create_tak_connection
 
+class UUID_Manager:
+    def __init__(self,db_file):
+        self.db_file=db_file;
+        self.uuid_map={}
+
+        #restore UUIDs from cache
+        map=self.__read_db_file();
+        for key in map.keys():
+            self.uuid_map[key]=(map[key],True);
+
+    def uuid(self,key,persist=False):
+        write=False;
+        if (persist) and (not key in self.uuid_map.keys()):
+            write=True
+        _uuid,persist=self.uuid_map.get(key,(str(uuid.uuid4()),persist));
+        self.uuid_map[key]=(_uuid,persist);
+        if write:
+            self.__write_db_file();
+        return _uuid;
+    
+    def get_historical_uuids(self):
+        map=self.__read_db_file();
+        return map.values();
+
+    def __write_db_file(self):
+        text=""
+        for key in self.uuid_map.keys():
+            uuid,persist=self.uuid_map[key];
+            if not persist:
+                continue;
+            line='%s,%s\n'%(key,uuid);
+            text=text+line;
+        Path(self.db_file).write_text(text,'utf-8');
+
+
+    def __read_db_file(self):
+        kvp={}
+        if not Path(self.db_file).exists():
+            return kvp;
+        data=Path(self.db_file).read_text();
+        
+        lines = data.rsplit("\n");
+        for line in lines:
+            parts = line.rsplit(",");
+            if (len(parts) == 2):
+                kvp[parts[0]] = parts[1];
+        
+        return kvp;
 
 class Tracker:
     def __init__(self,config):
@@ -17,16 +65,30 @@ class Tracker:
         self.last_track_time=time.time();
         self.last_metadata_time=time.time();
         self.sent_metadata=False;
-        self.uuid_hex_map={};
+        self.uuid_map=UUID_Manager('plugins/tak_notifier/uuids.csv');
         tak_tracker_config=config.get("tak_tracker",{});
         self.config=config;
         self.tak_tracker_config=tak_tracker_config;
         self.track_interval_sec=tak_tracker_config.get("update_interval_seconds",15);
         self.metadata_interval_sec=tak_tracker_config.get("metadata_update_interval_seconds",300);
         self.attitude_map=tak_tracker_config.get("attitude_map",{});
+
+        self.eta_zones=config.get("alert_eta_positions", []);
+        self.eta_radius=config.get("alert_eta_radius_meters",0);
+        if config.get("alert_eta_station_position",False):
+            eta_zone={}
+            eta_zone["name"] = "Station";
+            eta_zone["latitude"]=(self.config["station_latitude"]);
+            eta_zone["longitude"]=(self.config["station_longitude"]);
+            eta_zone["radius_meters"]=(self.config["alert_eta_radius_meters"]);
+            eta_zone["enabled"]=True;
+            self.eta_zones.append(eta_zone);
+        print ("tak_tracker - eta_zones");
+        print(self.eta_zones);
+
         print("tak_tracker - attitude_map");
         print(self.attitude_map)
-        print("tak_tracker - Tracker() initialized");
+        print("tak_tracker - Tracker() - Initialized");
 
         #note loiter exclusions for broadcast to tak server
         self.loiter_exclusions=config.get("alert_loiter_exclusions",[]);
@@ -41,33 +103,76 @@ class Tracker:
             self.__try_send_metadata(t);
 
     def __try_send_metadata(self,t):
+# NOTE Apparently this does NOT work for shapes - neither does STALE expiration
+#        #encourage others to delete any objects tied to historical UUIDs
+#        if (self.sent_metadata == False):
+#            old_uuids=self.uuid_map.get_historical_uuids();
+#            for old_uuid in old_uuids:
+#                print("trying to delete %s"%old_uuid);
+#                custom = self.__customize_delete_template(old_uuid);
+#                if (custom != ""):
+#                    print("################")
+#                    print(custom)
+#                    print("################")
+#                    self.connection.send(custom.encode('utf-8'));
+
         if (self.sent_metadata == False) or (t-self.last_metadata_time >= self.metadata_interval_sec): #resend at configured interval
             #send station range rings
-            custom = self.__customize_range_rings_template();
-            if (custom != ""):
-                self.connection.send(custom.encode('utf-8'));
+            if (self.tak_tracker_config.get("range_rings_count",0) > 0):
+                custom = self.__customize_range_rings_template();
+                if (custom != ""):
+                    self.connection.send(custom.encode('utf-8'));
+
+            #send eta (intercept) zones
+            if (self.tak_tracker_config.get("eta_rings_enabled",False)):
+                i=0;
+                for zone in self.eta_zones:
+                    print(zone);
+                    if not zone.get("enabled",False):
+                        continue;
+                    
+                    custom = self.__customize_eta_zone_template(zone);
+                    if (custom != ""):
+                        self.connection.send(custom.encode('utf-8'));
+                    i=i+1;
 
             #send loiter exclusion zones
-            for exclusion_zone in self.loiter_exclusions:
-                if not exclusion_zone.get("enabled",False):
-                    continue;
-                print("Exclusion Zone: %s"%(exclusion_zone["name"],));
-                custom=self.__customize_exclusion_zone_template(exclusion_zone);
-                self.connection.send(custom.encode('utf-8'));
-            self.last_metadata_time=t;
-            self.sent_metadata=True;
+            if (self.tak_tracker_config.get("exclusion_zone_rings_enabled",False)):
+                for zone in self.loiter_exclusions:
+                    if not zone.get("enabled",False):
+                        continue;
+                    
+                    custom=self.__customize_exclusion_zone_template(zone);
+                    if (custom != ""):
+                        self.connection.send(custom.encode('utf-8'));
+                self.last_metadata_time=t;
+                self.sent_metadata=True;
 
     def __loadxml(self):
-        self.pli_template = Path('plugins/tak_notifier/plitemplate.xml').read_text();
-        self.range_rings_template = Path('plugins/tak_notifier/range_rings_template.xml').read_text();
-        self.ellipse_template = Path('plugins/tak_notifier/ellipse_template.xml').read_text().replace("\n","");
+        self.pli_template = self.__xml_cleanup(Path('plugins/tak_notifier/plitemplate.xml').read_text());
+        self.range_rings_template = self.__xml_cleanup(Path('plugins/tak_notifier/range_rings_template.xml').read_text());
+        self.ellipse_template = self.__xml_cleanup(Path('plugins/tak_notifier/ellipse_template.xml').read_text());
+        self.delete_template = self.__xml_cleanup(Path('plugins/tak_notifier/delete_template.xml').read_text());
     
+    def __xml_cleanup(self,xml):
+        xml=xml.replace("\n","");
+        xml=xml.replace("\t","");
+        xml=re.sub("\s\s+"," ",xml)
+        xml=xml.replace("> <","><")
+        return xml
+    
+    def __customize_delete_template(self,_uuid):
+        custom = self.delete_template;
+    
+        replacements = self.__build_delete_replacements(_uuid);
+        keys=replacements.keys();
+        for key in keys:
+            rep=replacements[key];
+            custom=custom.replace(key,rep);
+        return custom
+
     def __customize_pli_template(self,aircraft,field_map):
         custom = self.pli_template;
-        custom=custom.replace("\n","");
-        custom=custom.replace("\t","");
-        custom=re.sub("\s\s+"," ",custom)
-        custom=custom.replace("> <","><")
         
         replacements = self.__build_pli_replacments(aircraft,field_map);
         keys=replacements.keys();
@@ -78,16 +183,12 @@ class Tracker:
    
     def __customize_range_rings_template(self):
         custom = self.range_rings_template;
-        custom=custom.replace("\n","");
-        custom=custom.replace("\t","");
-        custom=re.sub("\s\s+"," ",custom)
-        custom=custom.replace("> <","><")
         
         range_zone={}
-        range_zone["name"] = "Station";
-        range_zone["latitude"]=str(self.config["station_latitude"]);
-        range_zone["longitude"]=str(self.config["station_longitude"]);
-        range_zone["radius_meters"]=str(self.tak_tracker_config["range_rings_distance_meters"]);
+        range_zone["name"] = "Station Ranges";
+        range_zone["latitude"]=(self.config["station_latitude"]);
+        range_zone["longitude"]=(self.config["station_longitude"]);
+        range_zone["radius_meters"]=(self.tak_tracker_config["range_rings_distance_meters"]);
 
         replacements = self.__build_range_rings_replacements(range_zone,self.tak_tracker_config["feature_colors"]["station_range_rings"]);
         
@@ -101,7 +202,7 @@ class Tracker:
         if rings=="":
             return "";
         
-        print("mapping %s -> %s"%(self.ellipse_template,rings));
+        #print("mapping %s -> %s"%(self.ellipse_template,rings));
         #replacements[self.ellipse_template]=rings;
         #print("BEFORE: %s"%custom);
         custom=custom.replace(self.ellipse_template,rings);
@@ -109,16 +210,11 @@ class Tracker:
         for key in keys:
             rep=replacements[key];
             custom=custom.replace(key,rep);
-        print(custom);
         return custom
 
         
     def __customize_exclusion_zone_template(self,exclusion_zone):
         custom = self.range_rings_template;
-        custom=custom.replace("\n","");
-        custom=custom.replace("\t","");
-        custom=re.sub("\s\s+"," ",custom)
-        custom=custom.replace("> <","><")
         
         replacements = self.__build_range_rings_replacements(exclusion_zone,self.tak_tracker_config["feature_colors"]["exclusion_zone_range_rings"]);
         keys=replacements.keys();
@@ -126,7 +222,16 @@ class Tracker:
             rep=replacements[key];
             custom=custom.replace(key,rep);
         return custom
-
+    
+    def __customize_eta_zone_template(self,eta_zone):
+        custom = self.range_rings_template;
+        
+        replacements = self.__build_range_rings_replacements(eta_zone,self.tak_tracker_config["feature_colors"]["eta_range_rings"]);
+        keys=replacements.keys();
+        for key in keys:
+            rep=replacements[key];
+            custom=custom.replace(key,rep);
+        return custom
 
     def __build_callsign(self,aircraft,field_map):
         callsign=aircraft[field_map['icao_name']];
@@ -138,25 +243,23 @@ class Tracker:
             callsign=aircraft[field_map['hex']];
 
         if (operator is not None) and (operator != "None"):
-            #callsign=operator+"\n"+callsign;
             callsign="%s - %s"%(operator,callsign);
 
-        #if callsign is None or "" == callsign:
-        #    callsign=aircraft[field_map['registration']];
-        #    if callsign is None or "" == callsign:
-        #        callsign=aircraft[field_map['hex']];
         return callsign
 
+    def __build_time_format(self,t0):
+        return "%sZ"%(t0.isoformat().rsplit(".")[0]);
 
     def __build_pli_replacments(self,aircraft,field_map):
         replacements={}
         t0=datetime.utcnow().replace(tzinfo=timezone.utc)
         duration=timedelta(seconds=(int(self.metadata_interval_sec)*2));
         stale=t0+duration;
-        replacements["[TIME]"] = t0.isoformat();
-        replacements["[STALE]"] = stale.isoformat();
-        replacements["[UUID]"] = self.uuid_hex_map.get(aircraft[field_map['hex']],str(uuid.uuid4()));
-        self.uuid_hex_map[aircraft[field_map['hex']]] = replacements["[UUID]"];
+        replacements["[TIME]"] = self.__build_time_format(t0);
+        replacements["[STALE]"] = self.__build_time_format(stale);
+        #replacements["[UUID]"] = self.uuid_hex_map.get(aircraft[field_map['hex']],str(uuid.uuid4()));
+        replacements["[UUID]"] = self.uuid_map.uuid(aircraft[field_map['hex']]);
+        #self.uuid_hex_map[aircraft[field_map['hex']]] = replacements["[UUID]"];
         replacements["[LAT]"] = str(aircraft[field_map['latitude']]);
         replacements["[LON]"] = str(aircraft[field_map['longitude']]);
         callsign=self.__build_callsign(aircraft,field_map);
@@ -178,22 +281,32 @@ class Tracker:
         elon=ring_zone["longitude"];
         radius=ring_zone["radius_meters"];
 
-        replacements["[TIME]"] = t0.isoformat();
-        replacements["[STALE]"] = stale.isoformat();
-        replacements["[UUID]"] = self.uuid_hex_map.get(ekey,str(uuid.uuid4()));
-        self.uuid_hex_map[ekey] = replacements["[UUID]"];
+        replacements["[TIME]"] = self.__build_time_format(t0);
+        replacements["[STALE]"] = self.__build_time_format(stale);
+        replacements["[UUID]"] = self.uuid_map.uuid(ekey,persist=True);
         replacements["[LAT]"] = str(elat);
         replacements["[LON]"] = str(elon);
         replacements["[RADIUS_METERS]"] = str(radius);
         replacements["[NAME]"] = ename;
-        #replacements["[COLOR]"] = self.__hex_str_to_color(self.tak_tracker_config.get('exclusion_range_rings_color','FFFF0000'));
-        #replacements["[FILL_COLOR]"] = self.__hex_str_to_color(self.tak_tracker_config.get('exclusion_range_rings_fill_color','00FF0000'));
-        #replacements["[STROKE_WEIGHT]"] = str(self.tak_tracker_config.get('exclusion_range_stroke_weight',3));
         replacements["[COLOR]"] = self.__hex_str_to_color(color_map['color']);
         replacements["[FILL_COLOR]"] = self.__hex_str_to_color(color_map['fill_color']);
         replacements["[STROKE_WEIGHT]"] = str(color_map['stroke_weight']);
 
         return replacements;
+
+    def __build_delete_replacements(self,_uuid):
+        replacements={};
+        t0=datetime.utcnow().replace(tzinfo=timezone.utc)
+        duration=timedelta(minutes=1);
+        stale=t0+duration;
+
+        replacements["[TIME]"] = self.__build_time_format(t0);
+        replacements["[STALE]"] = self.__build_time_format(stale);
+        replacements["[LAT]"] = "0.0";
+        replacements["[LON]"] = "0.0";
+        replacements["[UUID]"] = str(_uuid);
+
+        return replacements
 
     def __hex_str_to_color(self,hex_str):
         v=int(hex_str,16);
@@ -202,12 +315,6 @@ class Tracker:
         #print("s:%d"%(s,));
         #print("%s - > %s"%(hex_str,str(s)));
         return str(s);
-
-
-        return str(u);
-
-    def __build_range_rings_elipse(self,radius_meters):
-        t='<ellipse minor="17058.58" angle="360" major="17058.58"/>'
 
     def __faa_to_icao_type(self,aircraft,field_map):
         faa_type_name=aircraft[field_map['faa_type_name']];
