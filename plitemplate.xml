@@ -4,5 +4,6 @@
 	<detail>
 		<contact callsign="[CALLSIGN]" />
 		<track speed="[SPEED]" course="[TRACK]"/>
+		<remarks>[REMARKS]</remarks>
 	</detail>
 </event>

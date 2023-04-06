@@ -239,10 +239,33 @@ class Tracker:
             rep=replacements[key];
             custom=custom.replace(key,rep);
         return custom
+    def __add_newline_if_printable(self,text):
+        if (text is None) or (len(text) == 0):
+            return "";
+        return "%s\n"%text;
 
+    def __remarks_text(self,aircraft,field_map):
+        hex=aircraft[field_map['hex']];
+        registration=aircraft[field_map['registration']];
+        operator=aircraft[field_map['registrant_name']];
+        model=aircraft[field_map['icao_name']];
+        comment=aircraft[field_map['comment']];
+
+        remarks="%s%s%s%s%s"%(self.__add_newline_if_printable(comment),
+            self.__add_newline_if_printable(operator),
+            self.__add_newline_if_printable(model),
+            self.__add_newline_if_printable(registration),
+            self.__add_newline_if_printable(hex));
+        return remarks;
+    
     def __build_callsign(self,aircraft,field_map):
         callsign=aircraft[field_map['icao_name']];
         operator=aircraft[field_map['registrant_name']];
+        comment=aircraft[field_map['comment']];
+        if (comment is None):
+            comment=""
+        else:
+            comment=comment+" "
 
         if callsign is None:
             callsign=aircraft[field_map['registration']];
@@ -251,6 +274,9 @@ class Tracker:
 
         if (operator is not None) and (operator != "None"):
             callsign="%s - %s"%(operator,callsign);
+        
+        #prepend any comments
+        callsign=comment+callsign;
 
         return callsign
 
@@ -299,6 +325,7 @@ class Tracker:
         replacements["[TRACK]"] = str(aircraft[field_map['track']]);
         replacements["[SPEED]"] = str(aircraft[field_map['speed']]);
         replacements["[TYPE]"] = self.__aircraft_type_milstd(aircraft,field_map);
+        replacements["[REMARKS]"] = self.__remarks_text(aircraft,field_map);
         return replacements;
 
     def __build_range_rings_replacements(self,ring_zone,color_map):
