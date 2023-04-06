@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<event version="2.0" uid="[UUID]" type="u-r-b-c-c" how="h-e" time="[TIME]" start="[TIME]" stale="[STALE]">
+<event version="2.0" uid="[UUID]" type="u-r-b-c-c" how="m-g" time="[TIME]" start="[TIME]" stale="[STALE]">
 	<point lat="[LAT]" lon="[LON]" hae="9999999.0" ce="9999999.0" le="9999999.0"/>
 	<detail>
 		<contact callsign="[NAME]"/>

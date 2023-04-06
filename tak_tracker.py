@@ -7,6 +7,11 @@ import uuid
 import re
 import time
 from tak_connection import create_tak_connection
+import random
+
+DEMO_OFFSET=False
+DEMO_OFFSET_LAT = random.uniform(-30, 30);
+DEMO_OFFSET_LON = random.uniform(-30, 30);
 
 class UUID_Manager:
     def __init__(self,db_file):
@@ -59,6 +64,9 @@ class UUID_Manager:
 
 class Tracker:
     def __init__(self,config):
+        global DEMO_OFFSET;
+        DEMO_OFFSET=config.get("demo_coordinate_offset",False);
+
         self.connection=create_tak_connection(config);
         self.__loadxml();
         time.sleep(2);
@@ -127,7 +135,6 @@ class Tracker:
             if (self.tak_tracker_config.get("eta_rings_enabled",False)):
                 i=0;
                 for zone in self.eta_zones:
-                    print(zone);
                     if not zone.get("enabled",False):
                         continue;
                     
@@ -250,6 +257,30 @@ class Tracker:
     def __build_time_format(self,t0):
         return "%sZ"%(t0.isoformat().rsplit(".")[0]);
 
+    def __build_coordinate_format(self,lat,lon):
+        #this is used to inject a random offset to all mapped coordinates for 
+        #generating demo/screenshot data and retaining privacy
+
+        #it is possible after a service restart to get aircraft records down here that
+        #dont yet have a lat/lon position - so handle it gracefully
+        if (lat is None) or (lon is None):
+            return ("0.0","0.0");
+        lat=float(lat);
+        lon=float(lon);
+        if DEMO_OFFSET:
+            olat = (lat+DEMO_OFFSET_LAT);
+            olon = (lon+DEMO_OFFSET_LON);
+            while(olat<-180):
+                olat=olat+360;
+            while(olon<-180):
+                olon=olon+360;
+            while (olat>180):
+                olat=olat-360;
+            while (olon>180):
+                olon=olon-360;
+            return (olat,olon);
+        return (lat,lon);
+
     def __build_pli_replacments(self,aircraft,field_map):
         replacements={}
         t0=datetime.utcnow().replace(tzinfo=timezone.utc)
@@ -257,11 +288,12 @@ class Tracker:
         stale=t0+duration;
         replacements["[TIME]"] = self.__build_time_format(t0);
         replacements["[STALE]"] = self.__build_time_format(stale);
-        #replacements["[UUID]"] = self.uuid_hex_map.get(aircraft[field_map['hex']],str(uuid.uuid4()));
         replacements["[UUID]"] = self.uuid_map.uuid(aircraft[field_map['hex']]);
-        #self.uuid_hex_map[aircraft[field_map['hex']]] = replacements["[UUID]"];
-        replacements["[LAT]"] = str(aircraft[field_map['latitude']]);
-        replacements["[LON]"] = str(aircraft[field_map['longitude']]);
+        
+        lat,lon = self.__build_coordinate_format(aircraft[field_map['latitude']],aircraft[field_map['longitude']]);
+        replacements["[LAT]"] = str(lat);
+        replacements["[LON]"] = str(lon);
+        
         callsign=self.__build_callsign(aircraft,field_map);
         replacements["[CALLSIGN]"] = callsign;
         replacements["[TRACK]"] = str(aircraft[field_map['track']]);
@@ -277,8 +309,7 @@ class Tracker:
         
         ename=ring_zone["name"];
         ekey="ring_zone: %s"%(ename,);
-        elat=ring_zone["latitude"];
-        elon=ring_zone["longitude"];
+        elat,elon = self.__build_coordinate_format(ring_zone["latitude"],ring_zone["longitude"]);
         radius=ring_zone["radius_meters"];
 
         replacements["[TIME]"] = self.__build_time_format(t0);
