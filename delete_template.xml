@@ -1,0 +1,8 @@
+<?xml version='1.0' standalone='yes' ?>
+<event start='[TIME]' time='[TIME]' stale='[STALE]' how='m-g' type='t-x-d-d' uid="[UUID]' version='2.0'>
+<detail>
+<link uid="[UUID]" relation="none" type="none"/>
+<__forcedelete/>
+</detail>
+<point lat="[LAT]" lon="[LON]" ce="9999999" le="9999999" hae="9999999.0" />
+</event>
