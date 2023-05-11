@@ -132,3 +132,5 @@ dmypy.json
 cot.xml
 config.json
 screenshots
+certs
+plugins

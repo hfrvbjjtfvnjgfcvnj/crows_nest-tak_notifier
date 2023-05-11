@@ -1,6 +1,7 @@
 import os
 import json
 from tak_notifier import NotifierFunctor
+from time import sleep
 
 def load_configuration():
   global config;
@@ -12,12 +13,12 @@ def load_configuration():
   return config
 
 config=load_configuration();
-#print(config)
+print(config)
 nf=NotifierFunctor(config);
 sleep(10);
-nf(config,"This is a title","This is some text",0,"spook","none");
-counter=0;
-while 1:
-    nf(config,"Loop Message","Message %d"%counter,0,"spook","none");
-    counter=counter+1
+#nf(config,"This is a title","This is some text",0,"spook","none");
+#counter=0;
+#while 1:
+#    nf(config,"Loop Message","Message %d"%counter,0,"spook","none");
+#    counter=counter+1
 
