@@ -9,8 +9,13 @@ thread=None;
 lock=threading.Lock();
 
 async def a_conn_thread():
-    #print("setting up instance...");
-    await instance.setup();
+    while True:
+        task = asyncio.create_task(instance.setup());
+        await task
+        ex = task.exception();
+        print(ex);
+        time.sleep(5);
+
 
 def conn_thread():
     asyncio.run(a_conn_thread());
@@ -47,6 +52,10 @@ class TakEnqueue:
 
 class TakConnection:
     def __init__(self,config):
+        self._config=config;
+        self.__init2__(config);
+    
+    def __init2__(self,config):
         self.pytakConfig=ConfigParser();
         self.pytakConfig["tak_server_config"]=config["tak_server_config"];
         self.pytakConfig=self.pytakConfig["tak_server_config"];
@@ -55,13 +64,44 @@ class TakConnection:
         #startup="TakConnection - Init".encode('utf-8');
         #self.clitool.tx_queue.put_nowait(startup);
 
+    async def run_clitool(self):
+        """Run this Thread and its associated coroutine tasks."""
+        self.clitool._logger.info("Run: %s", self.__class__)
+
+        await self.clitool.hello_event()
+        self.clitool.run_tasks()
+
+        done, _ = await asyncio.wait(
+            self.clitool.running_tasks, return_when=asyncio.FIRST_COMPLETED
+        )
+
+        for task in done:
+            #self._logger.info("Complete: %s", task)
+            print("Complete: %s", task)
+
+        for task in self.clitool.running_tasks:
+            try:
+                task.cancel();
+                ex = task.exception();
+                if ex is not None:
+                    print(ex);
+            except:
+                pass;
+        self.clitool.tasks.clear();
+        self.clitool.running_tasks.clear();
+
+
     async def setup(self):
         print("settingup CLITOOL...");
-        await self.clitool.setup();
-        self.serializer=TakSerializer(self.clitool.tx_queue,self.pytakConfig);
-        self.clitool.add_task(self.serializer);
-        print("RUNNING CLITOOL");
-        await self.clitool.run();
+        try:
+            await self.clitool.setup();
+            self.serializer=TakSerializer(self.clitool.tx_queue,self.pytakConfig);
+            self.clitool.add_task(self.serializer);
+            print("RUNNING CLITOOL");
+            #await self.clitool.run();
+            await self.run_clitool();
+        except Exception as ex:
+            print(ex);
         print("CLITOOL DONE");
 
     def send(self,data):
