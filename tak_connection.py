@@ -53,9 +53,6 @@ class TakEnqueue:
 class TakConnection:
     def __init__(self,config):
         self._config=config;
-        self.__init2__(config);
-    
-    def __init2__(self,config):
         self.pytakConfig=ConfigParser();
         self.pytakConfig["tak_server_config"]=config["tak_server_config"];
         self.pytakConfig=self.pytakConfig["tak_server_config"];
