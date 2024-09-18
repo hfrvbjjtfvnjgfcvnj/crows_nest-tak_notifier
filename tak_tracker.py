@@ -8,6 +8,7 @@ import re
 import time
 import tak_connection
 import random
+import copy
 
 DEMO_OFFSET=False
 DEMO_OFFSET_LAT = random.uniform(-30, 30);
@@ -81,7 +82,7 @@ class Tracker:
         self.metadata_interval_sec=tak_tracker_config.get("metadata_update_interval_seconds",300);
         self.attitude_map=tak_tracker_config.get("attitude_map",{});
 
-        self.eta_zones=config.get("alert_eta_positions", []);
+        self.eta_zones=copy.deepcopy(config.get("alert_eta_positions", []));
         self.eta_radius=config.get("alert_eta_radius_meters",0);
         if config.get("alert_eta_station_position",False):
             eta_zone={}
@@ -164,7 +165,7 @@ class Tracker:
     def __xml_cleanup(self,xml):
         xml=xml.replace("\n","");
         xml=xml.replace("\t","");
-        xml=re.sub("\s\s+"," ",xml)
+        xml=re.sub(r"\s\s+"," ",xml)
         xml=xml.replace("> <","><")
         return xml
     
