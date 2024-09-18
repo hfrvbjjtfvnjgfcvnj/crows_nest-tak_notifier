@@ -76,7 +76,6 @@ class TakSender(pytak.QueueWorker):
         while 1:
             if not self.in_queue.empty():
                 data = self.in_queue.get()
-                data = data.encode('utf-8')
                 #self._logger.info("Sending:\n%s\n", data.decode())
                 await self.__handle_data(data)
             else:
