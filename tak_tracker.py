@@ -165,7 +165,7 @@ class Tracker:
     def __xml_cleanup(self,xml):
         xml=xml.replace("\n","");
         xml=xml.replace("\t","");
-        xml=re.sub("\s\s+"," ",xml)
+        xml=re.sub(r"\s\s+"," ",xml)
         xml=xml.replace("> <","><")
         return xml
     
