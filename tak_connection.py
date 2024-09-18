@@ -1,107 +1,128 @@
 import asyncio
 from configparser import ConfigParser
-import pytak
 import threading
 import time
-
-instance=None;
-thread=None;
-lock=threading.Lock();
-
-async def a_conn_thread():
-    while True:
-        task = asyncio.create_task(instance.setup());
-        await task
-        ex = task.exception();
-        print(ex);
-        time.sleep(5);
+from queue import Queue
 
 
-def conn_thread():
-    asyncio.run(a_conn_thread());
+import multiprocessing as mp
+import logging
+from typing import Set, Union
 
-def create_tak_connection(config):
-    global instance
-    global thread
-    lock.acquire();
-    if instance is None:
-        print("create_tak_connection() - creating a new connection");
-        instance = TakConnection(config);
-        thread=threading.Thread(target=conn_thread);
-        thread.start();
-    time.sleep(1);
-    lock.release();
-    return instance;
+import pytak
 
-class TakSerializer(pytak.QueueWorker):
+thread=None                     #thread for running asyncio event loop
+lock=threading.Lock()           #synchronization for globals
+clitool=None                    #instance from pytak
+clitool_done=False              #flag denoting clitool loop has exited (it can't be restarted, it must be completely reinitialized)
+send_queue=Queue()              #queue for sending to TAK
+receive_queue=Queue()           #queue for receiving from TAK
+
+def __build_pytak_config(crows_nest_config:dict):
+    pytak_config=ConfigParser()
+    pytak_config["tak_server_config"]=crows_nest_config["tak_server_config"]
+    pytak_config=pytak_config["tak_server_config"]
+    return pytak_config
+
+async def __clitool_setup_async(crows_nest_config:dict):
+    """ CLITOOL "main" loop """
+    global clitool
+    #build a pytak config from the input config
+    pytak_config = __build_pytak_config(crows_nest_config)
+
+    clitool = pytak.CLITool(pytak_config)
+    #clitool = MyCLITool(pytak_config)
+    await clitool.setup()
+
+    clitool.add_task(TakSender(clitool.tx_queue, pytak_config))
+
+class TakReceiver(pytak.QueueWorker):
+    """Defines how you will handle events from RX Queue."""
+
     async def handle_data(self, data):
-        #print("TakSerializer.handle_data() - Start");
-        await self.put_queue(data);
-        #print("TakSerializer.handle_data() - End");
+        """Handle data from the receive queue."""
+        print(f"Received:\n{data.decode()}\n")
+        receive_queue.put(data)
 
-class TakEnqueue:
-    def __init__(self,conn,data):
-        self.conn=conn;
-        self.data=data;
+    async def run(self):  # pylint: disable=arguments-differ
+        """Read from the receive queue, put data onto handler."""
+        while 1:
+            data = (
+                await self.queue.get()
+            )  # this is how we get the received CoT from rx_queue
+            await self.handle_data(data)
 
-    def __await__(self):
-        pass
+class TakSender(pytak.QueueWorker):
+    """
+    Defines how you process or generate your Cursor-On-Target Events.
+    From there it adds the COT Events to a queue for TX to a COT_URL.
+    """
 
-    async def run(self, number_of_iterations=1):
-        await self.conn.serializer.handle_data(self.data);
+    def __init__(self, out_queue:Queue, config:dict):
+        super().__init__(out_queue, config)
+        self.in_queue = send_queue
 
-class TakConnection:
-    def __init__(self,config):
-        self._config=config;
-        self.pytakConfig=ConfigParser();
-        self.pytakConfig["tak_server_config"]=config["tak_server_config"];
-        self.pytakConfig=self.pytakConfig["tak_server_config"];
-        self.clitool=pytak.CLITool(self.pytakConfig);
-        self.msgs=[];
-        #startup="TakConnection - Init".encode('utf-8');
-        #self.clitool.tx_queue.put_nowait(startup);
+    def send(self, msg: str):
+        """Synchronous function to send a message"""
+        self.in_queue.put(msg)
 
-    async def run_clitool(self):
-        """Run this Thread and its associated coroutine tasks."""
-        self.clitool._logger.info("Run: %s", self.__class__)
+    async def __handle_data(self, data):
+        """Puts event into output queue (maybe making a function for this isn't necessary?)"""
+        event = data
+        await self.put_queue(event)
 
-        await self.clitool.hello_event()
-        self.clitool.run_tasks()
+    async def run(self, number_of_iterations=-1):
+        """Run the loop for processing or generating pre-CoT data."""
+        while 1:
+            if not self.in_queue.empty():
+                data = self.in_queue.get()
+                data = data.encode('utf-8')
+                #self._logger.info("Sending:\n%s\n", data.decode())
+                await self.__handle_data(data)
+            else:
+                await asyncio.sleep(0.05)
 
-        done, _ = await asyncio.wait(
-            self.clitool.running_tasks, return_when=asyncio.FIRST_COMPLETED
-        )
+async def __setup_and_run_clitool_async(crows_nest_config:dict):
+    await __clitool_setup_async(crows_nest_config)
+    await clitool.run()
 
-        for task in done:
-            #self._logger.info("Complete: %s", task)
-            print("Complete: %s", task)
+def __sync_clitool_run(crows_nest_config:dict):
+    global clitool_done
+    print("CLITOOL STARTED")
+    #asyncio.run(clitool.run())
+    asyncio.run(__setup_and_run_clitool_async(crows_nest_config))
+    print("CLITOOL DONE")
+    lock.acquire()
+    clitool_done = True
+    lock.release()
 
-        for task in self.clitool.running_tasks:
-            try:
-                task.cancel();
-                ex = task.exception();
-                if ex is not None:
-                    print(ex);
-            except:
-                pass;
-        self.clitool.tasks.clear();
-        self.clitool.running_tasks.clear();
+def create_tak_connection(crows_nest_config:dict):# -> TakSender:
+    """ Create asynchronous TakSender class """
+    global thread
+    lock.acquire()
 
+    if thread is None or not thread.is_alive():
+        thread=threading.Thread(target=__sync_clitool_run, args=(crows_nest_config,))
+        thread.start()
+    lock.release()
 
-    async def setup(self):
-        print("settingup CLITOOL...");
-        try:
-            await self.clitool.setup();
-            self.serializer=TakSerializer(self.clitool.tx_queue,self.pytakConfig);
-            self.clitool.add_task(self.serializer);
-            print("RUNNING CLITOOL");
-            #await self.clitool.run();
-            await self.run_clitool();
-        except Exception as ex:
-            print(ex);
-        print("CLITOOL DONE");
+def __check_clitool():
+    throw_error = False
+    lock.acquire()
+    throw_error = clitool_done
+    lock.release()
 
-    def send(self,data):
-        #print("TakConnection.send() - Start");
-        self.clitool.tx_queue.put_nowait(data);
-        #print("TakConnection.send() - End");
+    if throw_error:
+        raise ConnectionError("TAK Server Connection lost")
+
+def send_to_tak(msg:bytes):
+    """ Queues a message to send to TAK server """
+    __check_clitool()
+    send_queue.put(msg)
+
+def receive_from_tak() -> bytes:
+    """ Fetches a queued message received from the TAK server """
+    if receive_queue.empty():
+        __check_clitool()
+        return None
+    return receive_queue.get_nowait()
