@@ -13,8 +13,8 @@ from tak_chat_formatter import TakChatFormatter
 
 # pylint: disable=invalid-name
 
-RESET_TAK_CONNECTION_EVERY_N_SECONDS = 60*60
-HEARTBEAT_TAK_EVERY_N_SECONDS = 30*60
+reset_tak_connection_every_n_seconds = 60*60
+heartbeat_tak_every_n_seconds = 30*60
 
 thread = None  # thread for running asyncio event loop
 lock = threading.Lock()  # synchronization for globals
@@ -89,7 +89,7 @@ class TakSender(pytak.QueueWorker):
         bh_formatter = TakChatFormatter(self.crows_nest_config)
         start = timer()
         beat = start
-        while timer()-start < RESET_TAK_CONNECTION_EVERY_N_SECONDS:
+        while timer()-start < reset_tak_connection_every_n_seconds:
             if not self.in_queue.empty():
                 data = self.in_queue.get()
                 # self._logger.info("Sending:\n%s\n", data.decode())
@@ -97,7 +97,7 @@ class TakSender(pytak.QueueWorker):
             else:
                 await asyncio.sleep(5)
                 now = timer()
-                if (beat == start and now - start > 30) or (timer() - beat > HEARTBEAT_TAK_EVERY_N_SECONDS):
+                if (beat == start and now - start > 30) or (timer() - beat > heartbeat_tak_every_n_seconds):
                     beat = timer()
                     await self.__handle_data(bh_formatter.format_chat_msg(f"Crows Nest Heartbeat: {datetime.now()}").encode("utf-8"))
 
@@ -133,7 +133,15 @@ def __sync_clitool_run(crows_nest_config: dict):
 def create_tak_connection(crows_nest_config: dict):  # -> TakSender:
     """ Create asynchronous TakSender class """
     global thread
+    global reset_tak_connection_every_n_seconds
+    global heartbeat_tak_every_n_seconds
     lock.acquire()
+
+    reset_tak_connection_every_n_seconds = crows_nest_config.get(
+        "tak_server_reset_conn_every_n_seconds", reset_tak_connection_every_n_seconds)
+
+    heartbeat_tak_every_n_seconds = crows_nest_config.get(
+        "tak_server_heartbeat_every_n_seconds", heartbeat_tak_every_n_seconds)
 
     if thread is None or not thread.is_alive():
         thread = threading.Thread(
