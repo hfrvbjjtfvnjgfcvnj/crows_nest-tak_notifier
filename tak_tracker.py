@@ -6,7 +6,7 @@ from datetime import timedelta
 import uuid
 import re
 import time
-from tak_connection import create_tak_connection
+import tak_connection
 import random
 import copy
 
@@ -68,7 +68,7 @@ class Tracker:
         global DEMO_OFFSET;
         DEMO_OFFSET=config.get("demo_coordinate_offset",False);
 
-        self.connection=create_tak_connection(config);
+        tak_connection.create_tak_connection(config);
         self.__loadxml();
         time.sleep(2);
         self.last_track_time=time.time();
@@ -107,7 +107,7 @@ class Tracker:
         if (t-self.last_track_time >= self.track_interval_sec):
             for aircraft in list_of_aircraft:
                 custom=self.__customize_pli_template(aircraft,field_map);
-                self.connection.send(custom.encode('utf-8'));
+                tak_connection.send_to_tak(custom.encode('utf-8'));
             self.last_track_time=t;
             self.__try_send_metadata(t);
 
@@ -123,14 +123,14 @@ class Tracker:
 #                    print("################")
 #                    print(custom)
 #                    print("################")
-#                    self.connection.send(custom.encode('utf-8'));
+#                    tak_connection.send_to_tak(custom.encode('utf-8'));
 
         if (self.sent_metadata == False) or (t-self.last_metadata_time >= self.metadata_interval_sec): #resend at configured interval
             #send station range rings
             if (self.tak_tracker_config.get("range_rings_count",0) > 0):
                 custom = self.__customize_range_rings_template();
                 if (custom != ""):
-                    self.connection.send(custom.encode('utf-8'));
+                    tak_connection.send_to_tak(custom.encode('utf-8'));
 
             #send eta (intercept) zones
             if (self.tak_tracker_config.get("eta_rings_enabled",False)):
@@ -141,7 +141,7 @@ class Tracker:
                     
                     custom = self.__customize_eta_zone_template(zone);
                     if (custom != ""):
-                        self.connection.send(custom.encode('utf-8'));
+                        tak_connection.send_to_tak(custom.encode('utf-8'));
                     i=i+1;
 
             #send loiter exclusion zones
@@ -152,7 +152,7 @@ class Tracker:
                     
                     custom=self.__customize_exclusion_zone_template(zone);
                     if (custom != ""):
-                        self.connection.send(custom.encode('utf-8'));
+                        tak_connection.send_to_tak(custom.encode('utf-8'));
                 self.last_metadata_time=t;
                 self.sent_metadata=True;
 
